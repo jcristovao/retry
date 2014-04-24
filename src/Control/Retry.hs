@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
@@ -37,6 +36,7 @@ module Control.Retry
 
     , retrying
     , recovering
+    , recoveringServer
     , recoverAll
 
     -- * Utilities
@@ -49,8 +49,12 @@ module Control.Retry
 
 -------------------------------------------------------------------------------
 import           Control.Concurrent
+import           Control.Concurrent.Async.Lifted
 import           Control.Monad.Catch
+import           Control.Monad.Base
+import           Control.Monad.Trans.Control
 import           Control.Monad.IO.Class
+import           Data.IORef.Lifted
 import           Data.Default
 import           Prelude                hiding (catch)
 -------------------------------------------------------------------------------
@@ -223,6 +227,67 @@ recovering set@RetrySettings{..} hs f = go 0
             False -> throwM e
 
       go n = f `catches` map (transHandler n) hs
+
+
+-- | Run a long running action and recover from a raised exception
+-- by potentially retrying the action a number of times.
+-- If the action succeeds for longer than the expected timeout,
+-- the timeout count is reset.
+recoveringServer
+  :: forall m a.  ( MonadIO m
+                  , MonadCatch m
+                  , MonadBase IO m
+                  , MonadBaseControl IO m)
+  => RetrySettings
+  -- ^ Just use 'def' faor default settings
+  -> [Handler m Bool]
+  -- ^ Should a given exception be retried? Action will be
+  -- retried if this returns True.
+  -> m a
+  -- ^ Action to perform
+  -> m a
+recoveringServer set@RetrySettings{..} hs f = do
+  iter <- liftIO $ newIORef 0
+  go iter
+    where
+      retry :: IORef Int -> m a
+      retry iter = do
+          n <- readIORef iter
+          performDelay set n
+          atomicModifyIORef' iter (\i -> (i + 1,()))
+          go $! iter
+
+
+      -- | Convert a (e -> m Bool) handler into (e -> m a) so it can
+      -- be wired into the 'catches' combinator.
+      transHandler :: IORef Int -> Handler m Bool -> Handler m a
+      transHandler iter (Handler h) = Handler $ \ e -> do
+          chk <- h e
+          n   <- liftIO $ readIORef iter
+          if chk
+            then case numRetries of
+                RNoLimit -> retry iter
+                RLimit lim -> if n >= lim then throwM e else retry iter
+            else throwM e
+
+      go :: IORef Int -> m a
+      go iter = do
+        n <- readIORef iter
+        delayThreadAsync <- async (performDelay set n)
+        actionAsync      <- async f
+
+        which <- waitEither delayThreadAsync actionAsync
+                `catches` map ((fmap . fmap $ Right) $ transHandler iter) hs
+        case which of
+          -- time out finished, main action is still executing:
+          -- reset counter
+          Left _ -> do
+            atomicModifyIORef' iter (const (0,()))
+            wait actionAsync `catches` map (transHandler iter) hs
+          -- otherwise just return the result
+          Right ok ->  return ok
+
+
 
 
 
