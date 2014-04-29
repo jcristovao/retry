@@ -36,7 +36,7 @@ module Control.Retry
 
     , retrying
     , recovering
-    , recoveringServer
+    , recoveringWatchdog
     , recoverAll
 
     -- * Utilities
@@ -50,12 +50,13 @@ module Control.Retry
 -------------------------------------------------------------------------------
 import           Control.Concurrent
 import           Control.Concurrent.Async.Lifted
+import           Control.Applicative
 import           Control.Monad.Catch
 import           Control.Monad.Base
 import           Control.Monad.Trans.Control
 import           Control.Monad.IO.Class
 import           Data.IORef.Lifted
-import           Data.Default
+import           Data.Default.Class
 import           Prelude                hiding (catch)
 -------------------------------------------------------------------------------
 
@@ -231,22 +232,31 @@ recovering set@RetrySettings{..} hs f = go 0
 
 -- | Run a long running action and recover from a raised exception
 -- by potentially retrying the action a number of times.
--- If the action succeeds for longer than the expected timeout,
--- the timeout count is reset.
-recoveringServer
+-- If the action keeps running for longer than the provided reset delay,
+-- the retry count is reset.
+--
+-- /Note:/ I only got good results with reset delays >= 2 ms.
+--
+-- This is appropriate for unstable servers: it allows you to restart them
+-- indefinitely, but exit if they keep failing after the configured number
+-- of retries with very short executions.
+recoveringWatchdog
   :: forall m a.  ( MonadIO m
                   , MonadCatch m
                   , MonadBase IO m
                   , MonadBaseControl IO m)
   => RetrySettings
   -- ^ Just use 'def' faor default settings
+  -> Int
+  -- ^ Reset delay (in ms). If the process keeps running after this delay,
+  -- reset the retry count to zero.
   -> [Handler m Bool]
   -- ^ Should a given exception be retried? Action will be
   -- retried if this returns True.
   -> m a
   -- ^ Action to perform
   -> m a
-recoveringServer set@RetrySettings{..} hs f = do
+recoveringWatchdog set@RetrySettings{..} rstDelay hs f = do
   iter <- liftIO $ newIORef 0
   go iter
     where
@@ -272,12 +282,11 @@ recoveringServer set@RetrySettings{..} hs f = do
 
       go :: IORef Int -> m a
       go iter = do
-        n <- readIORef iter
-        delayThreadAsync <- async (performDelay set n)
+        delayThreadAsync <- async (liftIO . threadDelay $ rstDelay * 1000)
         actionAsync      <- async f
 
         which <- waitEither delayThreadAsync actionAsync
-                `catches` map ((fmap . fmap $ Right) $ transHandler iter) hs
+                `catches` map (fmap Right <$> transHandler iter) hs
         case which of
           -- time out finished, main action is still executing:
           -- reset counter

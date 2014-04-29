@@ -36,23 +36,45 @@ library
     transformers-base >= 0.4   && < 0.5,
     monad-control     >= 0.3.2 && < 0.4,
     transformers,
-    data-default
+    data-default-class
   hs-source-dirs:      src
   default-language:    Haskell2010
 
-executable testretry
-  main-is:      testretry.hs
-  build-depends:       
-    base              ==4.*, 
-    exceptions        >= 0.5   && < 0.6,
-    lifted-async      >= 0.1.2 && < 0.2,
-    lifted-base       >= 0.2.2 && < 0.3,
-    transformers-base >= 0.4   && < 0.5,
-    monad-control     >= 0.3.2 && < 0.4,
-    transformers,
-    data-default,
-    time
-  hs-source-dirs: src
-  default-language: Haskell2010
+--executable testretry
+  --main-is:      testretry.hs
+  --build-depends:       
+    --base              ==4.*, 
+    --exceptions        >= 0.5   && < 0.6,
+    --lifted-async      >= 0.1.2 && < 0.2,
+    --lifted-base       >= 0.2.2 && < 0.3,
+    --transformers-base >= 0.4   && < 0.5,
+    --monad-control     >= 0.3.2 && < 0.4,
+    --transformers,
+    --data-default-class,
+    --time
+  --hs-source-dirs: src
+  --default-language: Haskell2010
 
-  
+test-suite test
+    type:           exitcode-stdio-1.0
+    main-is:        main.hs
+    hs-source-dirs: test,src
+    build-depends:       
+        base              ==4.*  
+      , exceptions        >= 0.5   && < 0.6
+      , lifted-async      >= 0.1.2 && < 0.2
+      , lifted-base       >= 0.2.2 && < 0.3
+      , transformers-base >= 0.4   && < 0.5
+      , monad-control     >= 0.3.2 && < 0.4
+      , transformers
+      , data-default-class
+      , time
+      , QuickCheck         >= 2.6
+      , HUnit              >= 1.2.5.2
+      , hspec              >= 1.7.2
+    default-language: Haskell2010
+
+
+
+
+ 
