@@ -26,32 +26,20 @@ isLeftAnd f ei = case ei of
 
 {-# ANN spec ("HLint: ignore Redundant do"::String) #-}
 spec :: Spec
-spec = describe "retry" $ do
-  it "recovering test without quadratic retry delay"
-     . property . monadicIO $ do
-    startTime <- run $ getCurrentTime
-    timeout <- (+2) . getSmall . getPositive <$> pick arbitrary
-    retries <- getSmall . getPositive <$> pick arbitrary
-    res <- run . try $ recovering (RetrySettings (RLimit retries) False timeout)
-                              [Handler (\(e::SomeException) -> return True)]
-                              (throwM (userError "booo"))
-    endTime <- run $ getCurrentTime
-    QCM.assert (isLeftAnd isUserError res)
-    let ms' = ((fromInteger . toInteger $ (timeout * retries)) / 1000.0)
-    QCM.assert (diffUTCTime endTime startTime >= ms')
+spec = parallel $ describe "retry" $ do
 
-  it "recovering test with quadratic retry delay"
-     . property . monadicIO $ do
-    startTime <- run $ getCurrentTime
-    timeout <- (+2) . getSmall . getPositive <$> pick arbitrary
-    retries <- getSmall . getPositive <$> pick arbitrary
-    res <- run . try $ recovering (RetrySettings (RLimit retries) True timeout)
-                              [Handler (\(e::SomeException) -> return True)]
-                              (throwM (userError "booo"))
-    endTime <- run $ getCurrentTime
-    QCM.assert (isLeftAnd isUserError res)
-    let ms' = ((fromInteger . toInteger $ (timeout * 2 ^ retries)) / 1000.0)
-    QCM.assert (diffUTCTime endTime startTime >= ms')
+  {-it "recovering test without quadratic retry delay"-}
+     {-. property . monadicIO $ do-}
+    {-startTime <- run $ getCurrentTime-}
+    {-timeout <- (+2) . getSmall . getPositive <$> pick arbitrary-}
+    {-retries <- getSmall . getPositive <$> pick arbitrary-}
+    {-res <- run . try $ recovering (RetrySettings (RLimit retries) False timeout)-}
+                              {-[Handler (\(e::SomeException) -> return True)]-}
+                              {-(throwM (userError "booo"))-}
+    {-endTime <- run $ getCurrentTime-}
+    {-QCM.assert (isLeftAnd isUserError res)-}
+    {-let ms' = ((fromInteger . toInteger $ (timeout * retries)) / 1000.0)-}
+    {-QCM.assert (diffUTCTime endTime startTime >= ms')-}
 
 
   it "IO actions starts failing after _limit_ times."
@@ -66,8 +54,10 @@ spec = describe "retry" $ do
                               [Handler (\(e::SomeException) -> return True)]
                               (failsAfter x limit timeout 1)
           ) :: PropertyM IO (Either IOException a)
-    QCM.assert (isLeftAnd isUserError res)
     inspect <- run $ readIORef x
+    run $ print $ isLeftAnd isUserError res
+    run $ print $ show inspect ++ "==" ++ show limit ++ " + " ++ show retries
+    QCM.assert (isLeftAnd isUserError res)
     QCM.assert (inspect == (limit + retries))
 
 
