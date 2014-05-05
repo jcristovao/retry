@@ -32,7 +32,6 @@ spec = parallel $ describe "quadratic delay" $ do
     startTime <- run $ getCurrentTime
     timeout <- (+2) . getSmall . getPositive <$> pick arbitrary
     retries <- pick . choose $ (0,10)
-    {-[>run $ print $ show retries ++ ":" ++ show timeout<]-}
     res <- run . try $ recovering (RetrySettings (RLimit retries) True timeout)
                               [Handler (\(e::SomeException) -> return True)]
                               (throwM (userError "booo"))
@@ -40,8 +39,6 @@ spec = parallel $ describe "quadratic delay" $ do
     QCM.assert (isLeftAnd isUserError res)
     let tmo = if retries > 0 then timeout * 2 ^ (retries - 1) else 0
     let ms' = ((fromInteger . toInteger $ tmo) / 1000.0)
-    {-[>run $ print $ "ms':" ++ show ms'<]-}
-    {-[>run $ print $ diffUTCTime endTime startTime<]-}
     QCM.assert (diffUTCTime endTime startTime >= ms')
 
 
