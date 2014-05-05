@@ -26,24 +26,23 @@ isLeftAnd f ei = case ei of
 
 {-# ANN spec ("HLint: ignore Redundant do"::String) #-}
 spec :: Spec
-spec = return ()
- {-parallel $ describe "quadratic delay" $ do-}
-  {-it "recovering test with quadratic retry delay"-}
-     {-. property . monadicIO $ do-}
-    {-startTime <- run $ getCurrentTime-}
-    {-timeout <- (+2) . getSmall . getPositive <$> pick arbitrary-}
-    {-retries <- pick . choose $ (0,10)-}
+spec = parallel $ describe "quadratic delay" $ do
+  it "recovering test with quadratic retry delay"
+     . property . monadicIO $ do
+    startTime <- run $ getCurrentTime
+    timeout <- (+2) . getSmall . getPositive <$> pick arbitrary
+    retries <- pick . choose $ (0,10)
     {-[>run $ print $ show retries ++ ":" ++ show timeout<]-}
-    {-res <- run . try $ recovering (RetrySettings (RLimit retries) True timeout)-}
-                              {-[Handler (\(e::SomeException) -> return True)]-}
-                              {-(throwM (userError "booo"))-}
-    {-endTime <- run $ getCurrentTime-}
-    {-QCM.assert (isLeftAnd isUserError res)-}
-    {-let tmo = if retries > 0 then timeout * 2 ^ (retries - 1) else 0-}
-    {-let ms' = ((fromInteger . toInteger $ tmo) / 1000.0)-}
+    res <- run . try $ recovering (RetrySettings (RLimit retries) True timeout)
+                              [Handler (\(e::SomeException) -> return True)]
+                              (throwM (userError "booo"))
+    endTime <- run $ getCurrentTime
+    QCM.assert (isLeftAnd isUserError res)
+    let tmo = if retries > 0 then timeout * 2 ^ (retries - 1) else 0
+    let ms' = ((fromInteger . toInteger $ tmo) / 1000.0)
     {-[>run $ print $ "ms':" ++ show ms'<]-}
     {-[>run $ print $ diffUTCTime endTime startTime<]-}
-    {-QCM.assert (diffUTCTime endTime startTime >= ms')-}
+    QCM.assert (diffUTCTime endTime startTime >= ms')
 
 
 failsAfter :: IORef Int -> Int -> Int -> Int -> IO b

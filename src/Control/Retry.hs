@@ -48,16 +48,15 @@ module Control.Retry
     ) where
 
 -------------------------------------------------------------------------------
-import           Control.Concurrent
+import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async.Lifted
 import           Control.Applicative
 import           Control.Monad.Catch
 import           Control.Monad.Base
 import           Control.Monad.Trans.Control
 import           Control.Monad.IO.Class
-import           Data.IORef.Lifted
+import           Control.Concurrent.MVar.Lifted
 import           Data.Default.Class
-import           Prelude                hiding (catch)
 -------------------------------------------------------------------------------
 
 
@@ -229,17 +228,24 @@ recovering set@RetrySettings{..} hs f = go 0
 
       go n = f `catches` map (transHandler n) hs
 
-
 -- | Run a long running action and recover from a raised exception
 -- by potentially retrying the action a number of times.
 -- If the action keeps running for longer than the provided reset delay,
 -- the retry count is reset.
 --
--- /Note:/ I only got good results with reset delays >= 2 ms.
+-- /Note 1:/ I only got good results with reset delays >= 2 ms.
 --
--- This is appropriate for unstable servers: it allows you to restart them
+-- /Note 2:/ This is appropriate for unstable servers: it allows you to restart them
 -- indefinitely, but exit if they keep failing after the configured number
 -- of retries with very short executions.
+--
+-- /Note 3:/ actually, delayThreadAsync may take longer than expected,
+-- and thus the value is not reset... how to cope with this?
+-- We don't actually have real time garantees in Haskell, so a failed
+-- execution actually passes by as successful. Is this ok?
+-- It has to be...
+
+
 recoveringWatchdog
   :: forall m a.  ( MonadIO m
                   , MonadCatch m
@@ -257,46 +263,49 @@ recoveringWatchdog
   -- ^ Action to perform
   -> m a
 recoveringWatchdog set@RetrySettings{..} rstDelay hs f = do
-  iter <- liftIO $ newIORef 0
-  go iter
+  retryCount <- newMVar 0
+  go retryCount
+
     where
-      retry :: IORef Int -> m a
-      retry iter = do
-          n <- readIORef iter
+      retry :: MVar Int -> m a
+      retry retryCount = do
+          n <- readMVar retryCount
           performDelay set n
-          atomicModifyIORef' iter (\i -> (i + 1,()))
-          go $! iter
+          modifyMVar_ retryCount (\i -> return $! i + 1)
+          go $! retryCount
 
 
       -- | Convert a (e -> m Bool) handler into (e -> m a) so it can
       -- be wired into the 'catches' combinator.
-      transHandler :: IORef Int -> Handler m Bool -> Handler m a
-      transHandler iter (Handler h) = Handler $ \ e -> do
+      transHandler :: MVar Int -> Handler m Bool -> Handler m a
+      transHandler retryCount (Handler h) = Handler $ \ e -> do
           chk <- h e
-          n   <- liftIO $ readIORef iter
+          n   <- liftIO $ readMVar retryCount
           if chk
             then case numRetries of
-                RNoLimit -> retry iter
-                RLimit lim -> if n >= lim then throwM e else retry iter
+                RNoLimit   -> retry retryCount
+                RLimit lim -> if n >= lim
+                                then throwM e
+                                else retry retryCount
             else throwM e
 
-      go :: IORef Int -> m a
-      go iter = do
+      go :: MVar Int -> m a
+      go retryCount = do
         delayThreadAsync <- async (liftIO . threadDelay $ rstDelay * 1000)
         actionAsync      <- async f
 
         which <- waitEither delayThreadAsync actionAsync
-                `catches` map (fmap Right <$> transHandler iter) hs
+                `catches` map (fmap Right <$> transHandler retryCount) hs
         case which of
           -- time out finished, main action is still executing:
           -- reset counter
           Left _ -> do
-            atomicModifyIORef' iter (const (0,()))
-            wait actionAsync `catches` map (transHandler iter) hs
+            modifyMVar_ retryCount (const $! return $! 0)
+            wait actionAsync `catches` map (transHandler retryCount) hs
           -- otherwise just return the result
-          Right ok ->  return ok
-
-
+          Right ok ->  do
+            cancel delayThreadAsync -- useless
+            return ok
 
 
 
