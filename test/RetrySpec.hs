@@ -9,7 +9,6 @@ import Control.Retry
 import Control.Monad.Catch
 import Data.Time.Clock
 import Data.Time.LocalTime ()
-import Control.Concurrent.MVar.Lifted
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -41,29 +40,3 @@ spec = parallel $ describe "retry" $ do
     QCM.assert (diffUTCTime endTime startTime >= ms')
 
 
-  it "IO actions starts failing after _limit_ times."
-     . property . monadicIO $ do
-    x <- run $ newMVar 0 :: PropertyM IO (MVar Int)
-
-    limit   <- getPositive <$> pick arbitrary
-    timeout <- (+2) . getPositive <$> pick arbitrary
-    retries <-        getPositive <$> pick arbitrary
-
-    res <- run . try $
-          recoveringWatchdog (RetrySettings (RLimit retries) False timeout)
-                              timeout
-                              [Handler (\(_::SomeException) -> return True)]
-                              (failsAfter x limit timeout 1)
-           :: PropertyM IO (Either IOException a)
-
-    inspect <- run $ readMVar x
-    QCM.assert (isLeftAnd isUserError res)
-    QCM.assert (inspect == (limit + retries))
-
-
-failsAfter :: MVar Int -> Int -> Int -> Int -> IO b
-failsAfter counter limit bef af = do
-  c <- readMVar counter
-  when (c < limit) (threadDelay (bef * 1000 * 2))
-  modifyMVar_ counter (\i -> return $! i + 1)
-  throwM (userError "booo")

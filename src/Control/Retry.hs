@@ -36,7 +36,6 @@ module Control.Retry
 
     , retrying
     , recovering
-    , recoveringWatchdog
     , recoverAll
 
     -- * Utilities
@@ -48,15 +47,11 @@ module Control.Retry
     ) where
 
 -------------------------------------------------------------------------------
-import           Control.Concurrent (threadDelay)
-import           Control.Concurrent.Async.Lifted
-import           Control.Applicative
+import           Control.Concurrent
 import           Control.Monad.Catch
-import           Control.Monad.Base
-import           Control.Monad.Trans.Control
 import           Control.Monad.IO.Class
-import           Control.Concurrent.MVar.Lifted
 import           Data.Default.Class
+import           Prelude                hiding (catch)
 -------------------------------------------------------------------------------
 
 
@@ -228,84 +223,6 @@ recovering set@RetrySettings{..} hs f = go 0
 
       go n = f `catches` map (transHandler n) hs
 
--- | Run a long running action and recover from a raised exception
--- by potentially retrying the action a number of times.
--- If the action keeps running for longer than the provided reset delay,
--- the retry count is reset.
---
--- /Note 1:/ I only got good results with reset delays >= 2 ms.
---
--- /Note 2:/ This is appropriate for unstable servers: it allows you to restart them
--- indefinitely, but exit if they keep failing after the configured number
--- of retries with very short executions.
---
--- /Note 3:/ actually, delayThreadAsync may take longer than expected,
--- and thus the value is not reset... how to cope with this?
--- We don't actually have real time garantees in Haskell, so a failed
--- execution actually passes by as successful. Is this ok?
--- It has to be...
-
-
-recoveringWatchdog
-  :: forall m a.  ( MonadIO m
-                  , MonadCatch m
-                  , MonadBase IO m
-                  , MonadBaseControl IO m)
-  => RetrySettings
-  -- ^ Just use 'def' faor default settings
-  -> Int
-  -- ^ Reset delay (in ms). If the process keeps running after this delay,
-  -- reset the retry count to zero.
-  -> [Handler m Bool]
-  -- ^ Should a given exception be retried? Action will be
-  -- retried if this returns True.
-  -> m a
-  -- ^ Action to perform
-  -> m a
-recoveringWatchdog set@RetrySettings{..} rstDelay hs f = do
-  retryCount <- newMVar 0
-  go retryCount
-
-    where
-      retry :: MVar Int -> m a
-      retry retryCount = do
-          n <- readMVar retryCount
-          performDelay set n
-          modifyMVar_ retryCount (\i -> return $! i + 1)
-          go $! retryCount
-
-
-      -- | Convert a (e -> m Bool) handler into (e -> m a) so it can
-      -- be wired into the 'catches' combinator.
-      transHandler :: MVar Int -> Handler m Bool -> Handler m a
-      transHandler retryCount (Handler h) = Handler $ \ e -> do
-          chk <- h e
-          n   <- liftIO $ readMVar retryCount
-          if chk
-            then case numRetries of
-                RNoLimit   -> retry retryCount
-                RLimit lim -> if n >= lim
-                                then throwM e
-                                else retry retryCount
-            else throwM e
-
-      go :: MVar Int -> m a
-      go retryCount = do
-        delayThreadAsync <- async (liftIO . threadDelay $ rstDelay * 1000)
-        actionAsync      <- async f
-
-        which <- waitEither delayThreadAsync actionAsync
-                `catches` map (fmap Right <$> transHandler retryCount) hs
-        case which of
-          -- time out finished, main action is still executing:
-          -- reset counter
-          Left _ -> do
-            modifyMVar_ retryCount (const $! return $! 0)
-            wait actionAsync `catches` map (transHandler retryCount) hs
-          -- otherwise just return the result
-          Right ok ->  do
-            cancel delayThreadAsync -- useless
-            return ok
 
 
 

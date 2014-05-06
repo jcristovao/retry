@@ -41,10 +41,3 @@ spec = parallel $ describe "quadratic delay" $ do
     let ms' = ((fromInteger . toInteger $ tmo) / 1000.0)
     QCM.assert (diffUTCTime endTime startTime >= ms')
 
-
-failsAfter :: IORef Int -> Int -> Int -> Int -> IO b
-failsAfter counter limit bef af = do
-  c <- readIORef counter
-  threadDelay (if c < limit then bef * 1000 else af * 1000)
-  atomicModifyIORef' counter (\i -> (i+1,()))
-  throwM (userError "booo")
