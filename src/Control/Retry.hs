@@ -51,6 +51,8 @@ import           Control.Concurrent
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Default.Class
+import           Data.Metrology
+import           Data.Metrology.SI
 import           Prelude                hiding (catch)
 -------------------------------------------------------------------------------
 
@@ -79,7 +81,7 @@ data RetrySettings = RetrySettings {
     , backoff    :: Bool
     -- ^ Whether to implement exponential backoff in retries. Defaults
     -- to True.
-    , baseDelay  :: Int
+    , baseDelay  :: Time
     -- ^ The base delay in miliseconds. Defaults to 50. Without
     -- 'backoff', this is the delay. With 'backoff', this base delay
     -- will grow by a factor of 2 on each subsequent retry.
@@ -87,7 +89,7 @@ data RetrySettings = RetrySettings {
 
 
 instance Default RetrySettings where
-    def = RetrySettings (limitedRetries 5) True 50
+    def = RetrySettings (limitedRetries 5) True (50 % milli Second)
 
 
 -- | Delay thread using backoff delay for the nth retry.
@@ -111,7 +113,7 @@ flatDelay set@RetrySettings{..} !_ = liftIO (threadDelay $ delay set)
 
 -- | Delay in micro seconds
 delay :: RetrySettings -> Int
-delay RetrySettings{..} = baseDelay * 1000
+delay RetrySettings{..} = (baseDelay #! micro Second)
 
 
 -- | Retry combinator for actions that don't raise exceptions, but
