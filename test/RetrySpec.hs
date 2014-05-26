@@ -35,5 +35,5 @@ spec = parallel $ describe "retry" $ do
                               (throwM (userError "booo"))
     endTime <- run getCurrentTime
     QCM.assert (isLeftAnd isUserError res)
-    let ms' = ((fromInteger . toInteger $ ((timeout #! milli Second) * retries)) / 1000.0)
+    let ms' = ((fromInteger . toInteger $ ((round $ timeout ## milli Second) * retries)) / 1000.0)
     QCM.assert (diffUTCTime endTime startTime >= ms')
