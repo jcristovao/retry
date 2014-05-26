@@ -20,7 +20,7 @@ isLeftAnd f ei = case ei of
   Left v -> f v
   _      -> False
 
-toMs = (round $ ## milli Second)
+toMs = round . (## milli Second)
 
 {-# ANN spec ("HLint: ignore Redundant do"::String) #-}
 spec :: Spec
