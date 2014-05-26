@@ -14,7 +14,7 @@ description:
         case we should hang back for a bit and retry the query instead
         of simply raising an exception.
 
-version:             0.5
+version:             0.5.1
 synopsis:            Retry combinators for monadic actions that may fail
 license:             BSD3
 license-file:        LICENSE
@@ -31,7 +31,7 @@ library
   build-depends:       base            ==4.* 
                      , exceptions      >= 0.6    && < 0.7
                      , transformers    >= 0.3    && < 0.5
-                     , units           >= 2.0.1  && < 2.1 
+                     , units           >= 2.0    && < 2.1 
                      , units-defs      >= 1.0    && < 1.1
                      , data-default-class
   hs-source-dirs:      src
@@ -46,7 +46,7 @@ test-suite test
     build-depends:     base              ==4.*  
                      , exceptions      >= 0.6    && < 0.7
                      , transformers    >= 0.3    && < 0.5
-                     , units           >= 2.0.1  && < 2.1 
+                     , units           >= 2.0    && < 2.1 
                      , units-defs      >= 1.0    && < 1.1
                      , data-default-class
                      , time

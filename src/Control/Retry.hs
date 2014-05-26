@@ -113,7 +113,7 @@ flatDelay set@RetrySettings{..} !_ = liftIO (threadDelay $ delay set)
 
 -- | Delay in micro seconds
 delay :: RetrySettings -> Int
-delay RetrySettings{..} = (baseDelay #! micro Second)
+delay RetrySettings{..} = round $ baseDelay ## micro Second
 
 
 -- | Retry combinator for actions that don't raise exceptions, but
