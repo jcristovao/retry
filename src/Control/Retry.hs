@@ -35,6 +35,7 @@ module Control.Retry
     , unlimitedRetries
 
     , retrying
+    , retryingWHook
     , recovering
     , recoverAll
 
@@ -147,6 +148,32 @@ retrying :: MonadIO m
 retrying set@RetrySettings{..} chk f = go 0
     where
       retry n = do
+          performDelay set n
+          go $! n+1
+
+      go n = do
+          res <- f
+          case chk res of
+            True ->
+              case numRetries of
+                RNoLimit -> retry n
+                RLimit lim -> if n >= lim then return res else retry n
+            False -> return res
+
+retryingWHook :: MonadIO m
+         => RetrySettings
+         -> (b -> Bool)
+         -- ^ A function to check whether the result should be
+         -- retried. If True, we delay and retry the operation.
+         -> Maybe (Int -> m ())
+         -- ^ A function to be executed in every retry
+         -> m b
+         -- ^ Action to run
+         -> m b
+retryingWHook set@RetrySettings{..} chk hook f = go 0
+    where
+      retry n = do
+          maybe (return ()) (\ra -> ra n) hook
           performDelay set n
           go $! n+1
 
