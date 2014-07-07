@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -37,6 +38,8 @@ module Control.Retry
     , retrying
     , retryingWHook
     , recovering
+    , HandlerN(..)
+    , recoveringN
     , recoverAll
 
     -- * Utilities
@@ -252,6 +255,43 @@ recovering set@RetrySettings{..} hs f = go 0
 
       go n = f `catches` map (transHandler n) hs
 
+
+-- | Run an action and recover from a raised exception by potentially
+-- retrying the action a number of times.
+-- The iteration number is also provided to the handler (and thus, in
+-- this case, the Handler newtype is not used) to allow for different
+-- (logging?) actions based on the current iteration count.
+data HandlerN m a = forall e . Exception e => HandlerN (Int -> e -> m a)
+
+recoveringN :: forall m a. (MonadIO m, MonadCatch m)
+           => RetrySettings
+           -- ^ Just use 'def' faor default settings
+           -> [HandlerN m Bool]
+           -- ^ Should a given exception be retried? Action will be
+           -- retried if this returns True.
+           -> m a
+           -- ^ Action to perform
+           -> m a
+recoveringN set@RetrySettings{..} hs f = go 0
+    where
+      retry n = do
+          performDelay set n
+          go $! n+1
+
+
+      -- | Convert a (e -> m Bool) handler into (e -> m a) so it can
+      -- be wired into the 'catches' combinator.
+      transHandler :: Int -> HandlerN m Bool -> Handler m a
+      transHandler n (HandlerN h) = Handler $ \ e -> do
+          chk <- h n e
+          case chk of
+            True ->
+              case numRetries of
+                RNoLimit -> retry n
+                RLimit lim -> if n >= lim then throwM e else retry n
+            False -> throwM e
+
+      go n = f `catches` map (transHandler n) hs
 
 
 
