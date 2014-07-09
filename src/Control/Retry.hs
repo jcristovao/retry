@@ -63,6 +63,7 @@ import           Prelude                hiding (catch)
 
 data RetryLimit = RLimit Int
                 | RNoLimit
+  deriving (Show)
 
 
 -- | Set a limited number of retries. Default in 'def' is 5.
