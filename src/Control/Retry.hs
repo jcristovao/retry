@@ -164,6 +164,7 @@ retrying set@RetrySettings{..} chk f = go 0
                 RLimit lim -> if n >= lim then return res else retry n
             False -> return res
 
+-- | Same as retrying, but with an additional hook for each iteration
 retryingWHook :: MonadIO m
          => RetrySettings
          -> (b -> Bool)
